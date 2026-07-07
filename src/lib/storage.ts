@@ -1,4 +1,4 @@
-import { todayKey } from "@/lib/date";
+import { toDateKey, todayKey } from "@/lib/date";
 
 export type TaskStatus = "inbox" | "scheduled" | "completed";
 
@@ -38,6 +38,8 @@ const DEMO_INBOX_TITLES = [
   "学一点 vibe coding",
 ];
 const DEMO_DONE_TITLES = ["给又又剪指甲", "回复一条朋友消息"];
+const DEMO_YESTERDAY_DONE_TITLES = ["整理一下下载文件夹", "把水电费记到账本"];
+const DEMO_YESTERDAY_UNFINISHED_TITLES = ["买一袋咖啡豆", "给相册清理 20 张照片"];
 
 function storageAvailable(): boolean {
   if (typeof window === "undefined") return false;
@@ -77,6 +79,9 @@ export function createTaskDraft(title: string, now = new Date()): Task {
 
 export function createDemoTasks(now = new Date()): Task[] {
   const today = todayKey(now);
+  const yesterdayDate = new Date(now);
+  yesterdayDate.setDate(now.getDate() - 1);
+  const yesterday = toDateKey(yesterdayDate);
   const base = now.getTime();
 
   const makeTask = (
@@ -115,6 +120,18 @@ export function createDemoTasks(now = new Date()): Task[] {
         today,
         new Date(base - (DEMO_DONE_TITLES.length - index) * 1_000).toISOString(),
       ),
+    ),
+    ...DEMO_YESTERDAY_DONE_TITLES.map((title, index) =>
+      makeTask(
+        title,
+        index + 30,
+        "completed",
+        yesterday,
+        new Date(yesterdayDate.getTime() - (index + 1) * 20 * 60_000).toISOString(),
+      ),
+    ),
+    ...DEMO_YESTERDAY_UNFINISHED_TITLES.map((title, index) =>
+      makeTask(title, index + 40, "scheduled", yesterday, null),
     ),
   ];
 }
@@ -193,7 +210,7 @@ export function loadTasks(): LoadTasksResult {
   const notices: StorageNotice[] = [];
 
   if (!storageAvailable()) {
-    const tasks = createDemoTasks();
+    const tasks = recycleExpiredScheduledTasks(createDemoTasks());
 
     return {
       tasks,
@@ -209,7 +226,7 @@ export function loadTasks(): LoadTasksResult {
   const raw = window.localStorage.getItem(STORAGE_KEY);
 
   if (!raw) {
-    const demoTasks = createDemoTasks();
+    const demoTasks = recycleExpiredScheduledTasks(createDemoTasks());
     const writeNotice = saveTasks(demoTasks);
     if (writeNotice) notices.push(writeNotice);
 
@@ -231,7 +248,7 @@ export function loadTasks(): LoadTasksResult {
 
     return { tasks, notices };
   } catch {
-    const demoTasks = createDemoTasks();
+    const demoTasks = recycleExpiredScheduledTasks(createDemoTasks());
     const writeNotice = saveTasks(demoTasks);
     if (writeNotice) notices.push(writeNotice);
 
@@ -249,7 +266,7 @@ export function loadTasks(): LoadTasksResult {
 }
 
 export function resetDemoData(): LoadTasksResult {
-  const tasks = createDemoTasks();
+  const tasks = recycleExpiredScheduledTasks(createDemoTasks());
   const writeNotice = saveTasks(tasks);
 
   return {

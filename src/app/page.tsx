@@ -154,11 +154,14 @@ function MoreMenu({
       }
       setOpen(false);
     };
+    const closeOnAction = () => setOpen(false);
 
     window.addEventListener("pointerdown", closeOnOutside);
+    window.addEventListener("close-task-menus", closeOnAction);
 
     return () => {
       window.removeEventListener("pointerdown", closeOnOutside);
+      window.removeEventListener("close-task-menus", closeOnAction);
     };
   }, [open]);
 
@@ -212,7 +215,10 @@ function MenuButton({
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={() => {
+        onClick();
+        window.dispatchEvent(new Event("close-task-menus"));
+      }}
       className={`block w-full rounded px-3 py-2 text-left text-sm transition hover:bg-[#f4f5f2] ${
         danger ? "text-[#a1534c]" : "text-[#3f443d]"
       }`}
@@ -229,18 +235,28 @@ function DateMenuItem({
   taskId: string;
   onSelect: (id: string, date: string) => void;
 }) {
+  const inputId = `date-${taskId}`;
   const handleDate = (value: string) => {
-    if (value) onSelect(taskId, value);
+    if (!value) return;
+    onSelect(taskId, value);
+    window.dispatchEvent(new Event("close-task-menus"));
   };
 
   return (
-    <label className="block rounded px-3 py-2 text-sm text-[#3f443d] transition hover:bg-[#f4f5f2]">
-      选日期
+    <label
+      htmlFor={inputId}
+      className="relative block cursor-pointer rounded px-3 py-2 text-sm text-[#3f443d] transition hover:bg-[#f4f5f2]"
+    >
+      <span>选日期</span>
+      <span className="mt-1 block rounded border border-[#dfe3dc] bg-white px-2 py-1.5 text-xs text-[#7f857d]">
+        选择日期
+      </span>
       <input
+        id={inputId}
         type="date"
         onChange={(event) => handleDate(event.target.value)}
         onInput={(event) => handleDate(event.currentTarget.value)}
-        className="mt-1 block h-8 w-full rounded border border-[#dfe3dc] bg-white px-1 text-sm"
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
       />
     </label>
   );
@@ -449,26 +465,30 @@ function ScheduledBoard({
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [tasks]);
 
-  if (grouped.length === 0) return null;
-
   return (
     <section>
       <SectionTitle title="已安排" count={tasks.length} note="明天和选定日期会放在这里" />
       <SectionShell tone="scheduled">
-        <div className="space-y-3">
-          {grouped.map(([dateKey, dateTasks]) => (
-            <div key={dateKey}>
-              <div className="mb-1 border-l-2 border-[#9daa96] px-2 text-xs font-medium text-[#687863]">
-                {formatShortDate(dateKey)}
+        {grouped.length > 0 ? (
+          <div className="space-y-3">
+            {grouped.map(([dateKey, dateTasks]) => (
+              <div key={dateKey}>
+                <div className="mb-1 border-l-2 border-[#9daa96] px-2 text-xs font-medium text-[#687863]">
+                  {formatShortDate(dateKey)}
+                </div>
+                <ul>
+                  {dateTasks.map((task) => (
+                    <ScheduledTaskRow key={task.id} task={task} actions={actions} />
+                  ))}
+                </ul>
               </div>
-              <ul>
-                {dateTasks.map((task) => (
-                  <ScheduledTaskRow key={task.id} task={task} actions={actions} />
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <p className="py-4 text-sm leading-6 text-[#858a82]">
+            还没有安排到具体日期的事。想起来再定也行。
+          </p>
+        )}
       </SectionShell>
     </section>
   );
@@ -481,7 +501,6 @@ function CompletedHistory({
   tasks: Task[];
   actions: TaskActions;
 }) {
-  const [open, setOpen] = useState(false);
   const grouped = useMemo(() => {
     const map = new Map<string, Task[]>();
 
@@ -494,25 +513,11 @@ function CompletedHistory({
     return [...map.entries()].sort(([a], [b]) => b.localeCompare(a));
   }, [tasks]);
 
-  if (tasks.length === 0) return null;
-
   return (
     <section>
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        className="mb-3 flex w-full items-end justify-between px-0.5 text-left transition active:scale-[0.99]"
-      >
-        <div>
-          <h2 className="text-[15px] font-semibold text-[#20221f]">完成记录</h2>
-          <p className="mt-0.5 text-xs text-[#858a82]">之前日期完成的事在这里看</p>
-        </div>
-        <span className="text-xs font-medium text-[#8a9088]">
-          {open ? "收起" : `${tasks.length} 件`}
-        </span>
-      </button>
-      {open ? (
-        <SectionShell tone="completed">
+      <SectionTitle title="完成记录" count={tasks.length} note="之前日期完成的事在这里看" />
+      <SectionShell tone="completed">
+        {grouped.length > 0 ? (
           <div className="space-y-3">
             {grouped.map(([dateKey, dateTasks]) => (
               <div key={dateKey}>
@@ -527,8 +532,12 @@ function CompletedHistory({
               </div>
             ))}
           </div>
-        </SectionShell>
-      ) : null}
+        ) : (
+          <p className="py-4 text-sm leading-6 text-[#858a82]">
+            之前还没有留下完成记录。做完的事会慢慢留在这里。
+          </p>
+        )}
+      </SectionShell>
     </section>
   );
 }
@@ -673,9 +682,15 @@ export default function Home() {
           <SectionTitle title="晚点再说" count={groups.inboxTasks.length} note="还没定哪天做" />
           <SectionShell tone="inbox">
             <ul>
-              {groups.inboxTasks.map((task) => (
-                <InboxTaskRow key={task.id} task={task} actions={actions} />
-              ))}
+              {groups.inboxTasks.length > 0 ? (
+                groups.inboxTasks.map((task) => (
+                  <InboxTaskRow key={task.id} task={task} actions={actions} />
+                ))
+              ) : (
+                <li className="py-4 text-sm leading-6 text-[#858a82]">
+                  这里也空着。想到什么就先随手记下来。
+                </li>
+              )}
             </ul>
           </SectionShell>
         </section>
