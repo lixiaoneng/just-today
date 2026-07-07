@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { formatHeaderDate, formatShortDate, toDateKey } from "@/lib/date";
+import { formatHeaderDate, formatShortDate, toDateKey, tomorrowKey } from "@/lib/date";
 import { Task } from "@/lib/storage";
 import { useTasks } from "@/hooks/useTasks";
 
@@ -88,6 +88,80 @@ function ConfirmDelete({
         </button>
       </div>
     </div>
+  );
+}
+
+function DateScheduleSheet({
+  task,
+  onCancel,
+  onSave,
+}: {
+  task: Task;
+  onCancel: () => void;
+  onSave: (dateKey: string) => void;
+}) {
+  const initialDate = task.scheduledDate ?? tomorrowKey();
+  const [date, setDate] = useState(initialDate);
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onCancel();
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onCancel]);
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-end bg-[rgba(32,34,31,0.18)] px-3 pb-3 pt-10 backdrop-blur-[2px]">
+      <button
+        type="button"
+        aria-label="取消选日期"
+        onClick={onCancel}
+        className="absolute inset-0 cursor-default"
+      />
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!date) return;
+          onSave(date);
+        }}
+        className="relative mx-auto w-full max-w-[520px] rounded-xl border border-[#e0e4dd] bg-white p-4 shadow-[0_18px_48px_rgba(30,34,28,0.18)]"
+      >
+        <p className="text-xs font-medium text-[#858a82]">安排处理时间</p>
+        <h3 className="mt-1 text-[17px] font-semibold leading-6 text-[#20221f]">
+          {task.title}
+        </h3>
+        <label className="mt-4 block">
+          <span className="mb-2 block text-sm text-[#5f655d]">选日期</span>
+          <input
+            type="date"
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
+            autoFocus
+            className="h-11 w-full rounded-md border border-[#dfe3dc] bg-white px-3 text-[16px] text-[#20221f] outline-none focus:border-[#687863]"
+          />
+        </label>
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md px-3 py-2 text-sm text-[#6f746d] transition active:scale-[0.98]"
+          >
+            取消
+          </button>
+          <button
+            type="submit"
+            className="rounded-md bg-[#687863] px-4 py-2 text-sm font-medium text-white transition active:scale-[0.98]"
+          >
+            保存
+          </button>
+        </div>
+      </form>
+    </div>,
+    document.body,
   );
 }
 
@@ -228,40 +302,6 @@ function MenuButton({
   );
 }
 
-function DateMenuItem({
-  taskId,
-  onSelect,
-}: {
-  taskId: string;
-  onSelect: (id: string, date: string) => void;
-}) {
-  const inputId = `date-${taskId}`;
-  const handleDate = (value: string) => {
-    if (!value) return;
-    onSelect(taskId, value);
-    window.dispatchEvent(new Event("close-task-menus"));
-  };
-
-  return (
-    <label
-      htmlFor={inputId}
-      className="relative block cursor-pointer rounded px-3 py-2 text-sm text-[#3f443d] transition hover:bg-[#f4f5f2]"
-    >
-      <span>选日期</span>
-      <span className="mt-1 block rounded border border-[#dfe3dc] bg-white px-2 py-1.5 text-xs text-[#7f857d]">
-        选择日期
-      </span>
-      <input
-        id={inputId}
-        type="date"
-        onChange={(event) => handleDate(event.target.value)}
-        onInput={(event) => handleDate(event.currentTarget.value)}
-        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-      />
-    </label>
-  );
-}
-
 function TodayTaskRow({
   task,
   actions,
@@ -334,6 +374,7 @@ function InboxTaskRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [pickingDate, setPickingDate] = useState(false);
 
   return (
     <li className="animate-settle-in border-b border-[#eceee9] py-2.5 last:border-b-0">
@@ -367,7 +408,7 @@ function InboxTaskRow({
               <MenuButton onClick={() => actions.scheduleTomorrow(task.id)}>
                 明天做
               </MenuButton>
-              <DateMenuItem taskId={task.id} onSelect={actions.scheduleTask} />
+              <MenuButton onClick={() => setPickingDate(true)}>选日期</MenuButton>
               <MenuButton onClick={() => setEditing(true)}>编辑</MenuButton>
               <MenuButton danger onClick={() => setConfirmingDelete(true)}>
                 删除
@@ -376,6 +417,16 @@ function InboxTaskRow({
           </>
         )}
       </div>
+      {pickingDate ? (
+        <DateScheduleSheet
+          task={task}
+          onCancel={() => setPickingDate(false)}
+          onSave={(dateKey) => {
+            actions.scheduleTask(task.id, dateKey);
+            setPickingDate(false);
+          }}
+        />
+      ) : null}
       {confirmingDelete ? (
         <ConfirmDelete
           onCancel={() => setConfirmingDelete(false)}
@@ -395,6 +446,7 @@ function ScheduledTaskRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [pickingDate, setPickingDate] = useState(false);
 
   return (
     <li className="animate-settle-in border-b border-[#eceee9] py-2.5 last:border-b-0">
@@ -428,7 +480,7 @@ function ScheduledTaskRow({
               <MenuButton onClick={() => actions.moveToInbox(task.id)}>
                 晚点再说
               </MenuButton>
-              <DateMenuItem taskId={task.id} onSelect={actions.scheduleTask} />
+              <MenuButton onClick={() => setPickingDate(true)}>选日期</MenuButton>
               <MenuButton onClick={() => setEditing(true)}>编辑</MenuButton>
               <MenuButton danger onClick={() => setConfirmingDelete(true)}>
                 删除
@@ -437,6 +489,16 @@ function ScheduledTaskRow({
           </>
         )}
       </div>
+      {pickingDate ? (
+        <DateScheduleSheet
+          task={task}
+          onCancel={() => setPickingDate(false)}
+          onSave={(dateKey) => {
+            actions.scheduleTask(task.id, dateKey);
+            setPickingDate(false);
+          }}
+        />
+      ) : null}
       {confirmingDelete ? (
         <ConfirmDelete
           onCancel={() => setConfirmingDelete(false)}
